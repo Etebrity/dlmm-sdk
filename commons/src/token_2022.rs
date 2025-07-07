@@ -17,7 +17,7 @@ pub enum ActionType {
 
 pub async fn get_potential_token_2022_related_ix_data_and_accounts(
     lb_pair: &LbPair,
-    rpc_client: RpcClient,
+    rpc_client: &RpcClient,
     action_type: ActionType,
 ) -> Result<Option<(Vec<RemainingAccountsSlice>, Vec<AccountMeta>)>> {
     let potential_token_2022_mints = match action_type {
@@ -40,8 +40,7 @@ pub async fn get_potential_token_2022_related_ix_data_and_accounts(
 
     for (mint, accounts_type) in potential_token_2022_mints {
         let extra_account_metas =
-            get_extra_account_metas_for_transfer_hook(mint, RpcClient::new(rpc_client.url()))
-                .await?;
+            get_extra_account_metas_for_transfer_hook(mint, &rpc_client).await?;
 
         if !extra_account_metas.is_empty() {
             slices.push(RemainingAccountsSlice {
@@ -62,7 +61,7 @@ pub async fn get_potential_token_2022_related_ix_data_and_accounts(
 
 pub async fn get_extra_account_metas_for_transfer_hook(
     mint: Pubkey,
-    rpc_client: RpcClient,
+    rpc_client: &RpcClient,
 ) -> Result<Vec<AccountMeta>> {
     let mint_account = rpc_client.get_account(&mint).await?;
     if mint_account.owner.eq(&spl_token::ID) {
@@ -87,17 +86,14 @@ pub async fn get_extra_account_metas_for_transfer_hook(
                 mint_state.base.decimals,
             )?;
 
-        let blocking_rpc_client = BlockingRpcClient::new(rpc_client.url());
-
-        let data_fetcher = |address: Pubkey| {
-            let account = blocking_rpc_client
+        let data_fetcher = |address: Pubkey| async move {
+            let account = rpc_client
                 .get_account(&address)
+                .await
                 .map(|account| account.data);
-            async move {
-                std::result::Result::Ok::<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>>(
-                    account.ok(),
-                )
-            }
+            std::result::Result::Ok::<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>>(
+                account.ok(),
+            )
         };
 
         add_extra_account_metas_for_execute(
